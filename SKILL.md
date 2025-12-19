@@ -1,134 +1,182 @@
 ---
 name: data-analysis
-description: Data analysis skill equipped with a mandatory prompt evaluation step. It enriches vague requests with schema discovery and context before execution, utilizing a specialized Python wrapper script.
+description: 数据分析技能，配备强制性的提示词评估步骤。它利用专门的 Python 包装脚本，在执行前通过模式发现和上下文补充来丰富模糊的请求，并包含安全的数据摄入协议。
 ---
 
-# Data Analysis Skill
+# 数据分析技能 (Data Analysis Skill)
 
-## Purpose
-To prevent execution errors and hallucinations by enforcing a "Evaluate → Clarify → Execute" loop. This skill mandates the use of a pre-processor script that wraps user requests in an evaluation protocol, forcing the Agent to assess prompt clarity before writing analysis code.
+## 目的
+为了防止执行错误和模型幻觉，本技能强制执行“评估 → 澄清 → 摄入 → 执行”的闭环流程。该技能要求必须使用一个预处理脚本来封装用户的请求，强制智能体（Agent）在编写正式分析代码之前，先评估提示词的清晰度并安全地探查数据。
 
-## Phase 1: Prompt Evaluation & Wrapper Execution
+## 第一阶段：提示词评估与包装器执行 (Phase 1: Evaluation)
 
-**Step 1: Input Normalization**
-All user interactions related to data analysis must first be processed through the `prompt-improver/improve-prompt.py` wrapper. This script handles bypass logic (shortcuts) and injects evaluation instructions.
+**步骤 1：输入标准化**
+所有与数据分析相关的用户交互必须首先通过 `prompt-improver/improve-prompt.py` 包装器进行处理。该脚本负责处理绕过逻辑（快捷方式）并注入评估指令。
 
-**Invocation Command:**
-The script expects a JSON object via `stdin`. Construct the command as follows:
+**调用命令：**
+该脚本通过 `stdin` 接收 JSON 对象。构建命令如下：
 
 ```bash
-echo '{"prompt": "USER_RAW_PROMPT_HERE"}' | python3 prompt-improver/improve-prompt.py
-
+echo '{"prompt": "在此处填入用户的原始提示词"}' | python3 prompt-improver/improve-prompt.py
 
 ```
 
-**Step 2: Interpreting Script Output**
-The script outputs a JSON object containing a `wrapped_prompt`. The Agent must read this output and strictly follow the "PROMPT EVALUATION" instructions contained within.
+**步骤 2：解读脚本输出**
+脚本会输出一个包含 `wrapped_prompt` 的 JSON 对象。智能体必须读取此输出，并严格遵循其中包含的“PROMPT EVALUATION”（提示词评估）指令。
 
-### Bypass Logic (Handled by Script)
+### 绕过逻辑 (由脚本处理)
 
-The script automatically detects and allows immediate execution for:
+脚本会自动检测以下情况并允许立即执行：
 
-* **`*` prefix**: Explicit bypass (User says "I know what I'm doing").
-* **`/` prefix**: Slash commands.
-* **`#` prefix**: Memorization features.
+* **`*` 前缀**：显式绕过（用户表示“我知道我在做什么”）。
+* **`/` 前缀**：斜杠命令。
+* **`#` 前缀**：记忆功能。
 
-### Evaluation Logic (The "Brain" of Phase 1)
+### 评估逻辑 (第一阶段的核心)
 
-When the script wraps the prompt, it asks the Agent: *"Is this prompt clear enough to execute?"*
+当脚本封装提示词后，它会询问智能体：*“这个提示词是否清晰到可以直接执行？”*
 
-The Agent must applies the following criteria to the **Data Context**:
+智能体必须根据**数据上下文**应用以下标准：
 
-1. **VAGUE Contexts (Trigger Phase 2):**
+1. **模糊语境 (触发第二阶段):**
+* “分析数据” (分析哪个文件？哪个指标？)
+* “展示趋势” (时间范围？聚合方式？)
+* “修复错误” (哪个日志文件？)
+* *行动：* 进入 **第二阶段：发现与澄清**。
 
-* "Analyze the data" (Which file? Which metric?)
-* "Show me the trend" (Time range? Aggregation?)
-* "Fix the error" (Which log file?)
-* *Action:* Proceed to **Phase 2: Discovery & Clarification**.
 
-2. **CLEAR Contexts (Skip to Execution):**
+2. **清晰语境 (跳至执行):**
+* “绘制 `users.csv` 中 2024 年 1 月的日活跃用户图表。”
+* “计算 `data.parquet` 中 'price' 列的平均值。”
+* *行动：* 跳过第二阶段，直接进入 **第三阶段：智能数据摄入** (如果尚未读取数据) 或 **执行阶段**。
 
-* "Plot daily active users from `users.csv` for Jan 2024."
-* "Calculate the mean of column 'price' in `data.parquet`."
-* *Action:* Proceed directly to **Execution Phase** (Part 2 of this skill).
 
-## Phase 2: Discovery & Clarification (Invoked if Vague)
 
-If the Evaluation in Phase 1 determines the prompt is **VAGUE**, the Agent effectively "invokes" this sub-routine to gather context.
+## 第二阶段：发现与澄清 (Phase 2: Discovery)
 
-**Workflow:**
+如果第一阶段的评估认定提示词是 **模糊 (VAGUE)** 的，智能体将启动此子程序来收集上下文。
 
-1. **Acknowledge & Notify:**
+**工作流：**
 
-* Inform the user: "Hey! The Prompt Improver flagged your request as a bit vague regarding [dataset/metric/scope]. Let me check the available data first."
+1. **确认与通知：**
+* 告知用户：“嘿！提示词优化器标记您的请求在 [数据集/指标/范围] 方面有点模糊。让我先检查一下可用数据。”
 
-2. **Systematic Research (Data Discovery):**
 
-* **Scan Directory:** Use `ls -lh` or `find` to locate potential data files (`.csv`, `.json`, `.parquet`, `.xlsx`, `.log`).
-* **Inspect Schema:** Use `head -n 5 <filename>` or a Python snippet to read column names. **Do not assume column names.**
-* **Check History:** Review previous conversation turns for loaded dataframes.
+2. **系统化调研 (数据发现):**
+* **扫描目录：** 使用 `ls -lh` 或 `find` 定位潜在的数据文件 (`.csv`, `.json`, `.parquet`, `.xlsx`, `.log`)。
+* **检查架构：** 使用 `head -n 5 <filename>` 或 Python 代码片段读取列名。**切勿臆断列名。**
+* **检查历史：** 回顾之前的对话轮次，查看是否有已加载的数据框。
 
-3. **Generate Clarifying Questions:**
 
-* Based *only* on the file headers found in step 2, formulate 1-3 specific questions.
-* **Invoke Tool:** You MUST use the `AskUserQuestion` tool to present these questions to the user. Do not use free text.
-* **Do not ask open-ended questions.** Offer options found in the data.
+3. **生成澄清问题：**
+* *仅*基于步骤 2 中发现的文件头信息，提出 1-3 个具体问题。
+* **不要问开放式问题。** 提供数据中发现的选项。
+* *示例：*
+> **发现文件：** `sales_2023.csv` (列: date, amount), `sales_2024.csv` (列: date, amount)
+> **提问：** “我应该分析哪一年的数据：2023 还是 2024？”
 
-*Example:*
 
-> **Files Found:** `sales_2023.csv` (cols: date, amount), `sales_2024.csv` (cols: date, amount)
-> **Question:** "Which year's data should I analyze: 2023 or 2024?"
+4. **等待用户输入：**
+* 一旦用户回答，将其答案与原始提示词结合，进入下一阶段。
 
-4. **Wait for User Input:**
 
-* Once the user answers, combine their answer with the original prompt and proceed to Execution.
+## 第三阶段：智能数据摄入与上下文加载 (Phase 3: Ingestion)
 
-## Examples of Behavior
+为了防止 Token 溢出和执行环境卡死，智能体 **严禁** 直接打印全量数据或将其加载到 Prompt 上下文中。必须严格遵守“先采样，后编码”的协议。
 
-### Scenario A: The Vague Request
+### 1. “先看一眼”协议 (The Peek-First Protocol)
 
-**User:** "Analyze the logs."
+在编写正式分析代码前，必须先执行一段轻量级的探查代码。
 
-**1. Execution:**
+**原则：**
 
-```bash
-echo '{"prompt": "Analyze the logs"}' | python3 prompt-improver/improve-prompt.py
+* **只看样貌，不看全貌**：仅获取元数据和少量样本。
+* **元数据优先**：必须获取列名（Columns）和数据类型（Dtypes）。
+* **样本限制**：严格限制读取行数（推荐 `n=5`）。
 
+**标准探查代码模式 (Python示例):**
+
+```python
+import pandas as pd
+
+# 设定文件路径
+file_path = 'target_data.csv'
+
+try:
+    # 1. 仅读取前5行，避免加载大文件占用内存
+    # 注意：对于非CSV文件 (如 Parquet, Excel)，使用相应的 read_ function 并配合 head()
+    if file_path.endswith('.csv'):
+        df_preview = pd.read_csv(file_path, nrows=5)
+    elif file_path.endswith('.parquet'):
+        df_preview = pd.read_parquet(file_path).head(5)
+    elif file_path.endswith(('.xls', '.xlsx')):
+        df_preview = pd.read_excel(file_path, nrows=5)
+    
+    # 2. 输出关键元数据供智能体思考
+    print("=== 数据预览 (前5行) ===")
+    print(df_preview.to_markdown(index=False))
+    
+    print("\n=== 列信息与类型 ===")
+    print(df_preview.info())
+    
+except Exception as e:
+    print(f"摄入错误: {e}")
 
 ```
 
-**2. Agent Internal Thought (triggered by script output):**
-"The wrapper asks if this is clear. It is NOT. 'Logs' is ambiguous. I need to find what logs exist."
+### 2. 编码与格式自适应
 
-**3. Agent Action (Phase 2):**
+* **编码回退**：如果读取失败，尝试 `encoding='gbk'` 或 `encoding='latin1'`。
+* **分隔符嗅探**：如果数据挤在一列，尝试 `sep=';'` 或 `sep='\t'`。
 
-* Runs `ls *.log` -> Finds `access.log`, `error.log`.
-* Runs `head -n 1 access.log` -> Sees specific columns.
-* **Reply to User:** "The prompt improver flagged this. I found `access.log` and `error.log`. Which one would you like to analyze, and are you looking for error rates or traffic volume?"
+### 3. 上下文注入
 
-### Scenario B: The Bypass (Expert Mode)
+智能体在获得上述代码的输出后，必须在思维链中构建数据的“虚拟视图”，确认列名和类型无误后，方可生成最终的分析代码。
 
-**User:** "*Count rows in data.csv"
+## 行为示例 (Examples)
 
-**1. Execution:**
+### 场景 A：模糊请求
+
+**用户：** “分析日志。”
+
+**1. 执行：**
 
 ```bash
-echo '{"prompt": "*Count rows in data.csv"}' | python3 prompt-improver/improve-prompt.py
-
+echo '{"prompt": "分析日志"}' | python3 prompt-improver/improve-prompt.py
 
 ```
 
-**2. Script Logic:**
-Detects `*`. Strips it. Returns `"Count rows in data.csv"` as a raw command without the evaluation wrapper.
+**2. 智能体内在思维 (由脚本输出触发):**
+“包装器询问这是否清晰。并不清晰。‘日志’是有歧义的。我需要找出存在什么日志。”
 
-**3. Agent Action:**
-Proceeds immediately to write Python code to count rows.
+**3. 智能体行动 (第二阶段):**
 
-## Progressive Disclosure
+* 运行 `ls *.log` -> 发现 `access.log`, `error.log`。
+* 运行 `head -n 1 access.log` -> 查看具体列。
+* **回复用户：** “提示词优化器标记了这个问题。我找到了 `access.log` 和 `error.log`。您想分析哪一个？您是想看错误率还是流量？”
 
-This SKILL.md contains the core workflow and essentials. For deeper guidance:
+### 场景 B：专家模式绕过
 
-* Research strategies: prompt-improver/research-strategies.md
-* Question patterns: prompt-improver/question-patterns.md
-* Comprehensive examples: prompt-improver/examples.md
-* Load these references only when detailed guidance is needed on specific aspects of prompt improvement.
+**用户：** “*统计 data.csv 的行数”
+
+**1. 执行：**
+
+```bash
+echo '{"prompt": "*统计 data.csv 的行数"}' | python3 prompt-improver/improve-prompt.py
+
+```
+
+**2. 脚本逻辑：**
+检测到 `*`。将其剥离。返回 `"统计 data.csv 的行数"` 作为原始命令，不带评估包装器。
+
+**3. 智能体行动：**
+直接进入第三阶段（快速预览结构）或直接编写 Python 代码统计行数。
+
+## 渐进式披露 (Progressive Disclosure)
+
+本 SKILL.md 包含核心工作流。如需更深入的指导：
+
+* 研究策略：`prompt-improver/research-strategies.md`
+* 提问模式：`prompt-improver/question-patterns.md`
+* 综合示例：`prompt-improver/examples.md`
+仅在需要关于提示词改进的详细指导时加载这些参考文档。
