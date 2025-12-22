@@ -172,6 +172,127 @@ echo '{"prompt": "*统计 data.csv 的行数"}' | python3 prompt-improver/improv
 **3. 智能体行动：**
 直接进入第三阶段（快速预览结构）或直接编写 Python 代码统计行数。
 
+
+## 第四阶段：全流程动态执行与自愈
+
+这是将分析转化为代码的核心阶段。智能体必须遵循标准的工程化数据链路：**质量检查 (DQC) → 清洗处理 → 分析建模 → 可视化呈现**。
+
+### 1. 常用技术栈 (Recommended Stack)
+* **核心处理**: `pandas`, `numpy`
+* **可视化**: `matplotlib`, `seaborn` (静态); `plotly` (交互式)
+* **统计与挖掘**: `scipy`, `sklearn` (如需)
+* **工具库**: `tabulate` (美化打印), `openpyxl`/`xlsxwriter` (Excel 处理)
+
+### 2. 标准执行工作流 (Standard Workflow)
+
+#### 步骤 A: 数据质量检查 (Data Quality Check, DQC)
+在进行任何分析前，必须先“体检”。这能避免“垃圾进，垃圾出 (GIGO)”。
+
+**代码规范：**
+```python
+def check_data_quality(df):
+    report = {
+        'rows': len(df),
+        'missing_values': df.isnull().sum().to_dict(),
+        'duplicates': df.duplicated().sum(),
+        'dtypes': df.dtypes.apply(lambda x: str(x)).to_dict()
+    }
+    # 打印关键异常
+    if report['duplicates'] > 0:
+        print(f"[Warning] Found {report['duplicates']} duplicate rows.")
+    return report
+
+# 执行检查
+quality_report = check_data_quality(df)
+
+```
+
+#### 步骤 B: 数据处理与清洗 (Processing)
+
+根据 DQC 的结果进行针对性清洗。
+
+**常见操作：**
+
+* **类型修正**：`df['date'] = pd.to_datetime(df['date'], errors='coerce')`
+* **空值处理**：`fillna()`, `dropna()`
+* **异常值过滤**：基于 IQR 或 Z-score 过滤。
+
+#### 步骤 C: 深度分析 (Analysis)
+
+执行核心统计或计算逻辑。
+
+**规范：**
+
+* **逻辑封装**：复杂的计算逻辑应尽量封装为函数。
+* **结果验证**：计算后检查结果的合理性（例如：概率不应大于1，销售额不应为负）。
+
+#### 步骤 D: 可视化 (Visualization)
+
+根据需求选择**静态**或**交互式**引擎。
+
+* **静态图表 (Matplotlib/Seaborn)**：
+* 适用于报告文档。
+* 必须使用 `plt.savefig()` 保存，**严禁** `plt.show()`。
+* 使用 `matplotlib.use('Agg')` 确保后台运行稳定。
+
+
+* **交互式图表 (Plotly)**：
+* 适用于探索性分析。
+* 生成 `.html` 文件，支持缩放和悬停查看。
+
+
+**通用绘图模板：**
+
+```python
+import matplotlib
+matplotlib.use('Agg') # 后台模式
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+try:
+    plt.figure(figsize=(12, 6))
+    # 自动处理，不强制指定字体路径，依赖环境默认配置
+    sns.lineplot(data=df, x='date', y='value')
+    plt.title('Analysis Result')
+    plt.tight_layout()
+    plt.savefig('result_chart.png')
+    print("Chart saved: result_chart.png")
+except Exception as e:
+    print(f"Plotting Error: {e}")
+
+```
+
+### 3. 错误处理与反思 (Error Handling & Reflection)
+
+智能体必须具备工程师的调试能力，遵循 **“捕获 → 诊断 → 修复”** 的闭环。
+
+**自动修复协议 (Self-Healing Protocol)：**
+
+1. **捕获异常 (Catch)**：
+* 所有的主要执行块（I/O, 绘图, 复杂计算）必须包裹在 `try-except` 块中。
+* 打印完整的 `traceback` 或简洁的错误信息到 `stderr`。
+
+
+2. **诊断与反思 (Diagnose)**：
+* 如果遇到 `KeyError`：检查是否列名大小写不匹配或含有空格（自动尝试 `.strip()`）。
+* 如果遇到 `ModuleNotFoundError`：检查是否使用了非标准库，尝试降级使用基础库（如用 `csv` 替代 `pandas`，虽然少见但需考虑）。
+* 如果遇到 `ValueError` (数据格式错误)：检查是否在字符串列上执行了数值计算。
+
+
+3. **自我修正 (Fix)**：
+* 在下一次执行中应用修正逻辑。
+* **限制**：最多重试 3 次。若失败，生成一份“错误分析报告”给用户，而不是崩溃。
+
+
+### 4. 交付物规范 (Deliverables)
+
+执行结束后，必须输出明确的交付清单：
+
+1. **清洗后的数据**：保存为 `.csv` 或格式化的 `.xlsx`。
+2. **可视化文件**：`.png` 图片或 `.html` 交互网页。
+3. **分析结论**：用**自然语言**总结数据背后的洞察（例如：“我们发现周末的流量比工作日高 20%”），而不仅仅是报数字。
+
+
 ## 渐进式披露 (Progressive Disclosure)
 
 本 SKILL.md 包含核心工作流。如需更深入的指导：
